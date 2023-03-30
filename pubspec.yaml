@@ -1,0 +1,16 @@
+name: part_time_model
+description: Financial modeling software.
+version: 0.1.0
+
+environment:
+  # Pick up records and patterns
+  sdk: '>=3.0.0-376.0.dev <4.0.0'
+
+# Add regular dependencies here.
+dependencies:
+  # path: ^1.8.0
+  meta: any
+
+dev_dependencies:
+  lints: ^2.0.0
+  test: ^1.21.0
