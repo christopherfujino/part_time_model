@@ -28,7 +28,6 @@ class Scheduler {
     final actions = workQueue[nextRun] ?? Queue<Action>();
     actions.addLast(action);
 
-    //print('scheduling a new run of ${action.name} at $nextRun');
     workQueue[nextRun] = actions;
   }
 
@@ -45,15 +44,14 @@ class Scheduler {
       return false;
     }
     currentTime = firstKey;
-    final actions = workQueue[firstKey]!;
-    final action = actions.removeFirst();
-    action.run(this, null);
-    if (actions.isEmpty) {
-      workQueue.remove(firstKey);
-      final SchedulerDate? nextKey = workQueue.firstKey();
-      if (nextKey == null || nextKey > endTime) {
-        return false;
-      }
+    final actions = workQueue.remove(firstKey)!;
+    while (actions.isNotEmpty) {
+      final action = actions.removeFirst();
+      action.run(this, null);
+    }
+    final SchedulerDate? nextKey = workQueue.firstKey();
+    if (nextKey == null || nextKey > endTime) {
+      return false;
     }
     return true;
   }
