@@ -1,11 +1,12 @@
 void main(List<String> arguments) {
   final ctx = Context();
+  final scheduler = Scheduler(ctx);
   final pipe1 = Pipe<int>();
   Generator<int>(
+    ctx,
     amount: 2,
     out: pipe1,
     tickInterval: 3,
-    ctx: ctx,
   );
   final pipe2 = Pipe<int>();
   Sum(pipe1, pipe2);
@@ -16,9 +17,7 @@ void main(List<String> arguments) {
     label: 'foo',
   );
   while (true) {
-    try {
-      ctx.scheduler.tick();
-    } on Done {
+    if (scheduler.tick()) {
       break;
     }
   }
@@ -28,46 +27,54 @@ void main(List<String> arguments) {
 final class Context {
   Context();
 
-  final scheduler = Scheduler();
-}
-
-class Scheduler {
-  Scheduler();
-
-  int ticks = 0;
-
+  late Scheduler scheduler;
   final tickables = <Tickable>[];
-
-  void tick() {
-    ticks += 1;
-    for (final tickable in tickables) {
-      if (ticks % tickable.tickInterval == 0) {
-        tickable.tick();
-      }
-    }
-  }
 }
 
-abstract base class Tickable {
-  Tickable({
-    required this.ctx,
-  }) {
-    ctx.scheduler.tickables.add(this);
-  }
-
-  void tick();
-
-  int get tickInterval;
+abstract base class Component {
+  Component(this.ctx);
 
   final Context ctx;
 }
 
+final class Scheduler extends Component {
+  Scheduler(super.ctx) {
+    ctx.scheduler = this;
+  }
+
+  int ticks = 0;
+
+  bool tick() {
+    ticks += 1;
+    bool isDone = false;
+    for (final tickable in ctx.tickables) {
+      if (ticks % tickable.tickInterval == 0) {
+        if (tickable.tick()) {
+          // run all on this tick
+          isDone = true;
+        }
+      }
+    }
+    return isDone;
+  }
+}
+
+abstract base class Tickable extends Component {
+  Tickable(super.ctx) {
+    ctx.tickables.add(this);
+  }
+
+  bool tick();
+
+  int get tickInterval;
+}
+
 final class Generator<T> extends Tickable {
-  Generator({
+  Generator(
+    super.ctx, {
     required this.amount,
     required this.out,
     required this.tickInterval,
-    required super.ctx,
   });
 
   final T amount;
@@ -75,9 +82,7 @@ final class Generator<T> extends Tickable {
   final Out<T> out;
 
   @override
-  void tick() {
-    out.send(amount);
-  }
+  bool tick() => out.send(amount);
 
   @override
   final int tickInterval;
@@ -87,7 +92,7 @@ class Sum {
   Sum(this.input, this.out) {
     input.listen((int t) {
       _x += t;
-      out.send(_x);
+      return out.send(_x);
     });
   }
 
@@ -107,9 +112,7 @@ class Plotter<T> {
   }) {
     input.listen((T t) {
       print('$label : (${ctx.scheduler.ticks}, $t)');
-      if (isDone(t)) {
-        throw const Done();
-      }
+      return isDone(t);
     });
   }
 
@@ -133,27 +136,21 @@ class Account<T> {
 }
 
 abstract class In<T> {
-  void listen(void Function(T) listener);
+  void listen(bool Function(T) listener);
 }
 
 abstract class Out<T> {
-  void send(T t);
+  bool send(T t);
 }
 
 class Pipe<T> implements In<T>, Out<T> {
-  late final void Function(T) _listener;
+  late final bool Function(T) _listener;
 
   @override
-  void listen(void Function(T) listener) {
+  void listen(bool Function(T) listener) {
     _listener = listener;
   }
 
   @override
-  void send(T t) {
-    _listener(t);
-  }
-}
-
-class Done implements Exception {
-  const Done();
+  bool send(T t) => _listener(t);
 }
