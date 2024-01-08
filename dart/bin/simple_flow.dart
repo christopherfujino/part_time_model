@@ -2,17 +2,17 @@ void main(List<String> arguments) {
   final ctx = Context();
   final scheduler = Scheduler(ctx);
   final pipe1 = Pipe<int>();
-  Generator<int>(
+  Invest(
     ctx,
-    amount: 2,
-    out: pipe1,
-    tickInterval: 3,
+    tickInterval: 1,
+    out: pipe1.push,
+    amount: 24,
   );
   final pipe2 = Pipe<int>();
-  Sum(pipe1, pipe2);
+  Accumulator(pipe1.registerPushReceiver, pipe2.push);
   Plotter<int>(
     ctx: ctx,
-    input: pipe2,
+    input: pipe2.registerPushReceiver,
     isDone: (int x) => x >= 100,
     label: 'foo',
   );
@@ -24,11 +24,12 @@ void main(List<String> arguments) {
   print('yay!');
 }
 
+/// Global state.
 final class Context {
   Context();
 
-  late Scheduler scheduler;
-  final tickables = <Tickable>[];
+  late final Scheduler scheduler = Scheduler(this);
+  final providers = <Provider>[];
 }
 
 abstract base class Component {
@@ -38,16 +39,14 @@ abstract base class Component {
 }
 
 final class Scheduler extends Component {
-  Scheduler(super.ctx) {
-    ctx.scheduler = this;
-  }
+  Scheduler(super.ctx);
 
   int ticks = 0;
 
   bool tick() {
     ticks += 1;
     bool isDone = false;
-    for (final tickable in ctx.tickables) {
+    for (final tickable in ctx.providers) {
       if (ticks % tickable.tickInterval == 0) {
         if (tickable.tick()) {
           // run all on this tick
@@ -59,66 +58,87 @@ final class Scheduler extends Component {
   }
 }
 
-abstract base class Tickable extends Component {
-  Tickable(super.ctx) {
-    ctx.tickables.add(this);
+abstract base class Provider<T> extends Component {
+  Provider(
+    super.ctx, {
+    required this.out,
+  }) {
+    ctx.providers.add(this);
   }
 
   bool tick();
 
   int get tickInterval;
+
+  final Pusher<T> out;
 }
 
-final class Generator<T> extends Tickable {
-  Generator(
+abstract base class Join<T> {
+  Join(this.input, this.out) {
+    input(_listener);
+  }
+
+  bool _listener(T t);
+
+  final PushReceiver<T> input;
+
+  final Pusher<T> out;
+}
+
+abstract base class Consumer<T> {
+  Consumer({required this.input, required this.ctx}) {
+    input(_consume);
+  }
+
+  bool _consume(T t);
+
+  final PushReceiver<T> input;
+
+  final Context ctx;
+}
+
+final class Invest<T> extends Provider<T> {
+  Invest(
     super.ctx, {
-    required this.amount,
-    required this.out,
     required this.tickInterval,
+    required this.amount,
+    required super.out,
   });
 
   final T amount;
 
-  final Out<T> out;
-
   @override
-  bool tick() => out.send(amount);
+  bool tick() => out(amount);
 
   @override
   final int tickInterval;
 }
 
-class Sum {
-  Sum(this.input, this.out) {
-    input.listen((int t) {
-      _x += t;
-      return out.send(_x);
-    });
-  }
+final class Accumulator<T> extends Join<int> {
+  Accumulator(super.input, super.out);
 
   int _x = 0;
 
-  final In<int> input;
-
-  final Out<int> out;
+  @override
+  bool _listener(int t) {
+    _x += t;
+    return out(_x);
+  }
 }
 
-class Plotter<T> {
+final class Plotter<T> extends Consumer<T> {
   Plotter({
-    required this.ctx,
-    required this.input,
+    required super.ctx,
+    required super.input,
     required this.isDone,
     required this.label,
-  }) {
-    input.listen((T t) {
-      print('$label : (${ctx.scheduler.ticks}, $t)');
-      return isDone(t);
-    });
+  });
+
+  @override
+  bool _consume(T t) {
+    print('$label : (${ctx.scheduler.ticks}, $t)');
+    return isDone(t);
   }
-
-  final In<T> input;
-
-  final Context ctx;
 
   // TODO make this a conditional DSL
   // We can't interpret user-provided Dart at runtime
@@ -130,27 +150,20 @@ class Plotter<T> {
 class Account<T> {
   Account(this.input, this.out);
 
-  final In<T> input;
+  final PushReceiver input;
 
-  final Out<T> out;
+  final Pusher<T> out;
 }
 
-abstract class In<T> {
-  void listen(bool Function(T) listener);
-}
+typedef PushReceiver<T> = void Function(bool Function(T));
+typedef Pusher<T> = bool Function(T);
 
-abstract class Out<T> {
-  bool send(T t);
-}
+class Pipe<T> {
+  late final bool Function(T) _receiver;
 
-class Pipe<T> implements In<T>, Out<T> {
-  late final bool Function(T) _listener;
-
-  @override
-  void listen(bool Function(T) listener) {
-    _listener = listener;
+  void registerPushReceiver(bool Function(T) receiver) {
+    _receiver = receiver;
   }
 
-  @override
-  bool send(T t) => _listener(t);
+  bool push(T t) => _receiver(t);
 }
