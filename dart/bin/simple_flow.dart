@@ -1,18 +1,21 @@
 void main(List<String> arguments) {
   final ctx = Context();
   final scheduler = Scheduler(ctx);
-  final pipe1 = Pipe<int>();
+  final pipe1 = PushPipe<int>();
   Invest(
     ctx,
-    tickInterval: 1,
-    out: pipe1.push,
+    interval: const SchedulerDuration._(1),
+    push: pipe1.push,
     amount: 24,
   );
-  final pipe2 = Pipe<int>();
-  Accumulator(pipe1.registerPushReceiver, pipe2.push);
-  Plotter<int>(
-    ctx: ctx,
-    input: pipe2.registerPushReceiver,
+  final pipe2 = PullPipe<int>();
+  Accumulator(
+    registerPushHandler: pipe1.registerPushHandler,
+    registerPullHandler: pipe2.registerPullHandler,
+  );
+  Plotter(
+    ctx,
+    pull: pipe2.pull,
     isDone: (int x) => x >= 100,
     label: 'foo',
   );
@@ -29,7 +32,7 @@ final class Context {
   Context();
 
   late final Scheduler scheduler = Scheduler(this);
-  final providers = <Provider>[];
+  final tickables = <Tickable>[];
 }
 
 abstract base class Component {
@@ -41,13 +44,13 @@ abstract base class Component {
 final class Scheduler extends Component {
   Scheduler(super.ctx);
 
-  int ticks = 0;
+  int months = 0;
 
   bool tick() {
-    ticks += 1;
+    months += 1;
     bool isDone = false;
-    for (final tickable in ctx.providers) {
-      if (ticks % tickable.tickInterval == 0) {
+    for (final tickable in ctx.tickables) {
+      if (months % tickable.interval.months == 0) {
         if (tickable.tick()) {
           // run all on this tick
           isDone = true;
@@ -58,112 +61,147 @@ final class Scheduler extends Component {
   }
 }
 
-abstract base class Provider<T> extends Component {
-  Provider(
-    super.ctx, {
-    required this.out,
-  }) {
-    ctx.providers.add(this);
+/// A [_Pusher] may cause side effects on the side of the [_PushReceiver].
+abstract class _Pusher<T> {
+  _Pusher({required this.push});
+
+  final void Function(T t) push;
+}
+
+abstract class _PushReceiver<T> {
+  _PushReceiver({required this.registerPushHandler});
+
+  final void Function(void Function(T)) registerPushHandler;
+}
+
+/// Pulling should not cause side effects. Implement a [_Pusher] to cause side effects.
+abstract class _Puller<T> {
+  _Puller({required this.pull});
+
+  final T Function() pull;
+}
+
+
+abstract class _PullReceiver<T> {
+  _PullReceiver({required this.registerPullHandler});
+
+  final void Function(T Function()) registerPullHandler;
+}
+
+/// Sends a value to [out] once per [interval].
+///
+/// Registered to the context, from where the [Scheduler] will call [tick].
+abstract base class Tickable<T> extends Component {
+  Tickable(super.ctx) {
+    ctx.tickables.add(this);
   }
 
+  /// Returns whether or not the simulation should end.
   bool tick();
 
-  int get tickInterval;
-
-  final Pusher<T> out;
+  // TODO should this instead be a bool callback?
+  SchedulerDuration get interval;
 }
 
-abstract base class Join<T> {
-  Join(this.input, this.out) {
-    input(_listener);
-  }
-
-  bool _listener(T t);
-
-  final PushReceiver<T> input;
-
-  final Pusher<T> out;
-}
-
-abstract base class Consumer<T> {
-  Consumer({required this.input, required this.ctx}) {
-    input(_consume);
-  }
-
-  bool _consume(T t);
-
-  final PushReceiver<T> input;
-
-  final Context ctx;
-}
-
-final class Invest<T> extends Provider<T> {
+final class Invest<T> extends Tickable<T> implements _Pusher<T> {
   Invest(
     super.ctx, {
-    required this.tickInterval,
+    required this.interval,
     required this.amount,
-    required super.out,
+    required this.push,
   });
 
   final T amount;
 
   @override
-  bool tick() => out(amount);
+  final void Function(T t) push;
 
   @override
-  final int tickInterval;
+  bool tick() {
+    push(amount);
+    return false;
+  }
+
+  @override
+  final SchedulerDuration interval;
 }
 
-final class Accumulator<T> extends Join<int> {
-  Accumulator(super.input, super.out);
+final class Accumulator implements _PushReceiver<int>, _PullReceiver<int> {
+  Accumulator({
+    required this.registerPushHandler,
+    required this.registerPullHandler,
+  }) {
+    registerPushHandler((int t) {
+      _x += t;
+    });
+    registerPullHandler(() => _x);
+  }
+
+  @override
+  final void Function(int Function()) registerPullHandler;
+
+  @override
+  final void Function(void Function(int)) registerPushHandler;
 
   int _x = 0;
-
-  @override
-  bool _listener(int t) {
-    _x += t;
-    return out(_x);
-  }
 }
 
-final class Plotter<T> extends Consumer<T> {
-  Plotter({
-    required super.ctx,
-    required super.input,
+final class Plotter extends Tickable implements _Puller<int> {
+  Plotter(
+    super.ctx, {
+    required this.pull,
     required this.isDone,
     required this.label,
   });
 
   @override
-  bool _consume(T t) {
-    print('$label : (${ctx.scheduler.ticks}, $t)');
+  final int Function() pull;
+
+  @override
+  bool tick() {
+    final int t = pull();
+    print('$label : (${ctx.scheduler.months}, $t)');
     return isDone(t);
   }
 
+  @override
+  final SchedulerDuration interval = const SchedulerDuration._(1);
+
   // TODO make this a conditional DSL
   // We can't interpret user-provided Dart at runtime
-  final bool Function(T) isDone;
+  final bool Function(int) isDone;
 
   final String label;
 }
 
-class Account<T> {
-  Account(this.input, this.out);
+class PullPipe<T> {
+  late final T Function() _handler;
 
-  final PushReceiver input;
+  void registerPullHandler(T Function() handler) {
+    _handler = handler;
+  }
 
-  final Pusher<T> out;
+  T pull() => _handler();
 }
 
-typedef PushReceiver<T> = void Function(bool Function(T));
-typedef Pusher<T> = bool Function(T);
+class PushPipe<T> {
+  late final void Function(T) _receiver;
 
-class Pipe<T> {
-  late final bool Function(T) _receiver;
-
-  void registerPushReceiver(bool Function(T) receiver) {
+  void registerPushHandler(void Function(T) receiver) {
     _receiver = receiver;
   }
 
-  bool push(T t) => _receiver(t);
+  void push(T t) => _receiver(t);
+}
+
+class SchedulerDuration {
+  const SchedulerDuration._(this.months);
+
+  factory SchedulerDuration({
+    int months = 0,
+    int years = 0,
+  }) =>
+      SchedulerDuration._(years * 12 + months);
+
+  final int months;
 }
