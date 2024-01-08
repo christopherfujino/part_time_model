@@ -1,30 +1,62 @@
 void main(List<String> arguments) {
   final ctx = Context();
-  final scheduler = Scheduler(ctx);
   final pipe1 = PushPipe<int>();
   Invest(
     ctx,
     interval: const SchedulerDuration._(1),
     push: pipe1.push,
-    amount: 24,
+    amount: 100 * 100, // $100
   );
-  final pipe2 = PullPipe<int>();
+  // Plot from Investment Account
+  final plotPullFromInvestment = PullPipe<int>();
+  // Interest from Investment Account
+  final pipe3 = PullPipe<int>();
+  // Interest to Investment Account
+  final pipe4 = PushPipe<int>();
+
+  // Investment account
   Accumulator(
-    registerPushHandler: pipe1.registerPushHandler,
-    registerPullHandler: pipe2.registerPullHandler,
+    registerPushHandlers: [
+      pipe1.registerPushHandler,
+      pipe4.registerPushHandler,
+    ],
+    registerPullHandlers: [
+      plotPullFromInvestment.registerPullHandler,
+      pipe3.registerPullHandler,
+    ],
+  );
+
+  // Sum of investments
+  Accumulator(
+    registerPushHandlers: [],
+    registerPullHandlers: [],
+  );
+
+  // Interest
+  Interest(
+    ctx,
+    rate: 0.1,
+    pull: pipe3.pull,
+    push: pipe4.push,
   );
   Plotter(
     ctx,
-    pull: pipe2.pull,
-    isDone: (int x) => x >= 100,
-    label: 'foo',
+    pull: plotPullFromInvestment.pull,
+    isDone: (int x) => x >= 1000000 * 100, // $1M
+    label: 'Investment balance',
+  );
+  Plotter(
+    ctx,
+    pull: null,
+    isDone: (int _) => false,
+    label: 'Investment capital',
   );
   while (true) {
-    if (scheduler.tick()) {
+    if (ctx.scheduler.tick()) {
       break;
     }
   }
-  print('yay!');
+  print('<END>');
 }
 
 /// Global state.
@@ -35,6 +67,7 @@ final class Context {
   final tickables = <Tickable>[];
 }
 
+// TODO should all components have an optional isDone?
 abstract base class Component {
   Component(this.ctx);
 
@@ -49,6 +82,9 @@ final class Scheduler extends Component {
   bool tick() {
     months += 1;
     bool isDone = false;
+    //print('tickables = ${ctx.tickables}');
+    // TODO do we need to be able to ensure the order of these?
+    // TODO can we order by dependencies?
     for (final tickable in ctx.tickables) {
       if (months % tickable.interval.months == 0) {
         if (tickable.tick()) {
@@ -69,9 +105,9 @@ abstract class _Pusher<T> {
 }
 
 abstract class _PushReceiver<T> {
-  _PushReceiver({required this.registerPushHandler});
+  _PushReceiver({required this.registerPushHandlers});
 
-  final void Function(void Function(T)) registerPushHandler;
+  final List<void Function(void Function(T))> registerPushHandlers;
 }
 
 /// Pulling should not cause side effects. Implement a [_Pusher] to cause side effects.
@@ -81,11 +117,10 @@ abstract class _Puller<T> {
   final T Function() pull;
 }
 
-
 abstract class _PullReceiver<T> {
-  _PullReceiver({required this.registerPullHandler});
+  _PullReceiver({required this.registerPullHandlers});
 
-  final void Function(T Function()) registerPullHandler;
+  final List<void Function(T Function())> registerPullHandlers;
 }
 
 /// Sends a value to [out] once per [interval].
@@ -126,22 +161,54 @@ final class Invest<T> extends Tickable<T> implements _Pusher<T> {
   final SchedulerDuration interval;
 }
 
+final class Interest extends Tickable implements _Puller<int>, _Pusher<int> {
+  Interest(
+    super.ctx, {
+    required this.rate,
+    required this.pull,
+    required this.push,
+  });
+
+  /// APY.
+  final double rate;
+
+  @override
+  final int Function() pull;
+
+  @override
+  final void Function(int t) push;
+
+  @override
+  final SchedulerDuration interval = SchedulerDuration._(1);
+
+  @override
+  bool tick() {
+    final total = pull();
+    final currentRate = rate * interval.months / 12;
+    final interest = (total.toDouble() * currentRate).floor();
+    push(interest);
+    return false;
+  }
+}
+
 final class Accumulator implements _PushReceiver<int>, _PullReceiver<int> {
   Accumulator({
-    required this.registerPushHandler,
-    required this.registerPullHandler,
+    required this.registerPushHandlers,
+    required this.registerPullHandlers,
   }) {
-    registerPushHandler((int t) {
-      _x += t;
-    });
-    registerPullHandler(() => _x);
+    for (final handler in registerPushHandlers) {
+      handler((int t) => _x += t);
+    }
+    for (final handler in registerPullHandlers) {
+      handler(() => _x);
+    }
   }
 
   @override
-  final void Function(int Function()) registerPullHandler;
+  final List<void Function(int Function())> registerPullHandlers;
 
   @override
-  final void Function(void Function(int)) registerPushHandler;
+  final List<void Function(void Function(int))> registerPushHandlers;
 
   int _x = 0;
 }
@@ -160,7 +227,9 @@ final class Plotter extends Tickable implements _Puller<int> {
   @override
   bool tick() {
     final int t = pull();
-    print('$label : (${ctx.scheduler.months}, $t)');
+    final years = ctx.scheduler.months ~/ 12;
+    final months = ctx.scheduler.months % 12;
+    print('$label : (${years}Y ${months}M, \$${t / 100})');
     return isDone(t);
   }
 
