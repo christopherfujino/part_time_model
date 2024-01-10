@@ -1,14 +1,19 @@
 void main(List<String> arguments) {
   final ctx = Context();
   final pipe1 = PushPipe<int>();
+  final pushToInvestmentCapitalAccumulator = PushPipe<int>();
   Invest(
     ctx,
     interval: const SchedulerDuration._(1),
-    push: pipe1.push,
+    pushers: [
+      pipe1.push,
+      pushToInvestmentCapitalAccumulator.push,
+    ],
     amount: 100 * 100, // $100
   );
   // Plot from Investment Account
   final plotPullFromInvestment = PullPipe<int>();
+  final plotPullFromInvestmentCapital = PullPipe<int>();
   // Interest from Investment Account
   final pipe3 = PullPipe<int>();
   // Interest to Investment Account
@@ -26,10 +31,12 @@ void main(List<String> arguments) {
     ],
   );
 
-  // Sum of investments
+  // Sum of investment capital
   Accumulator(
-    registerPushHandlers: [],
-    registerPullHandlers: [],
+    registerPushHandlers: [
+      pushToInvestmentCapitalAccumulator.registerPushHandler
+    ],
+    registerPullHandlers: [plotPullFromInvestmentCapital.registerPullHandler],
   );
 
   // Interest
@@ -37,19 +44,21 @@ void main(List<String> arguments) {
     ctx,
     rate: 0.1,
     pull: pipe3.pull,
-    push: pipe4.push,
+    pushers: [pipe4.push],
   );
   Plotter(
     ctx,
     pull: plotPullFromInvestment.pull,
     isDone: (int x) => x >= 1000000 * 100, // $1M
     label: 'Investment balance',
+    interval: SchedulerDuration._(12),
   );
   Plotter(
     ctx,
-    pull: null,
+    pull: plotPullFromInvestmentCapital.pull,
     isDone: (int _) => false,
     label: 'Investment capital',
+    interval: SchedulerDuration._(12),
   );
   while (true) {
     if (ctx.scheduler.tick()) {
@@ -99,9 +108,9 @@ final class Scheduler extends Component {
 
 /// A [_Pusher] may cause side effects on the side of the [_PushReceiver].
 abstract class _Pusher<T> {
-  _Pusher({required this.push});
+  _Pusher({required this.pushers});
 
-  final void Function(T t) push;
+  final List<void Function(T t)> pushers;
 }
 
 abstract class _PushReceiver<T> {
@@ -143,17 +152,19 @@ final class Invest<T> extends Tickable<T> implements _Pusher<T> {
     super.ctx, {
     required this.interval,
     required this.amount,
-    required this.push,
+    required this.pushers,
   });
 
   final T amount;
 
   @override
-  final void Function(T t) push;
+  final List<void Function(T t)> pushers;
 
   @override
   bool tick() {
-    push(amount);
+    for (final pusher in pushers) {
+      pusher(amount);
+    }
     return false;
   }
 
@@ -166,7 +177,7 @@ final class Interest extends Tickable implements _Puller<int>, _Pusher<int> {
     super.ctx, {
     required this.rate,
     required this.pull,
-    required this.push,
+    required this.pushers,
   });
 
   /// APY.
@@ -176,7 +187,7 @@ final class Interest extends Tickable implements _Puller<int>, _Pusher<int> {
   final int Function() pull;
 
   @override
-  final void Function(int t) push;
+  final List<void Function(int t)> pushers;
 
   @override
   final SchedulerDuration interval = SchedulerDuration._(1);
@@ -186,7 +197,9 @@ final class Interest extends Tickable implements _Puller<int>, _Pusher<int> {
     final total = pull();
     final currentRate = rate * interval.months / 12;
     final interest = (total.toDouble() * currentRate).floor();
-    push(interest);
+    for (final pusher in pushers) {
+      pusher(interest);
+    }
     return false;
   }
 }
@@ -219,6 +232,7 @@ final class Plotter extends Tickable implements _Puller<int> {
     required this.pull,
     required this.isDone,
     required this.label,
+    required this.interval,
   });
 
   @override
@@ -234,7 +248,7 @@ final class Plotter extends Tickable implements _Puller<int> {
   }
 
   @override
-  final SchedulerDuration interval = const SchedulerDuration._(1);
+  final SchedulerDuration interval;
 
   // TODO make this a conditional DSL
   // We can't interpret user-provided Dart at runtime
