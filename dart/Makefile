@@ -1,5 +1,5 @@
 .PHONY: test
-test: pubspec.lock
+test: pubspec.lock analyze
 	dart test --reporter=expanded
 
 .PHONY: analyze
