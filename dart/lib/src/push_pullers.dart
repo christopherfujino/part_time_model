@@ -35,14 +35,19 @@ final class Accumulator implements PushReceiver<int>, PullReceiver<int> {
   Accumulator({
     required this.registerPushHandlers,
     required this.registerPullHandlers,
+    required this.reducer,
   }) {
     for (final handler in registerPushHandlers) {
-      handler((int t) => _x += t);
+      handler((int cur) {
+        _x = reducer(_x, cur);
+      });
     }
     for (final handler in registerPullHandlers) {
       handler(() => _x);
     }
   }
+
+  final int Function(int acc, int cur) reducer;
 
   @override
   final List<void Function(int Function())> registerPullHandlers;

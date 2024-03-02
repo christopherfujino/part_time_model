@@ -33,6 +33,7 @@ void main() {
         plotPullFromInvestment.registerPullHandler,
         pipe3.registerPullHandler,
       ],
+      reducer: (acc, cur) => acc + cur,
     );
 
     // Sum of investment capital
@@ -41,6 +42,7 @@ void main() {
         pushToInvestmentCapitalAccumulator.registerPushHandler
       ],
       registerPullHandlers: [plotPullFromInvestmentCapital.registerPullHandler],
+      reducer: (acc, cur) => acc + cur,
     );
 
     // Interest
