@@ -2,97 +2,87 @@ import 'package:part_time_model/part_time_model.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('compound interest annual -- 30 years', () {
-    final indexFund = Account(
-      name: 'Total market index fund',
-      value: Dollar.fromCents(100),
+  test(r'time to $1M from investing $100/month', () {
+    final ctx = Context();
+    final pipe1 = PushPipe<int>();
+    final pushToInvestmentCapitalAccumulator = PushPipe<int>();
+    Invest(
+      ctx,
+      interval: SchedulerDuration(months: 1),
+      pushers: [
+        pipe1.push,
+        pushToInvestmentCapitalAccumulator.push,
+      ],
+      amount: 100 * 100, // $100
     );
-    final actions = <Action>[
-      InterestAction(
-        apy: 0.08,
-        interval: SchedulerDuration(SchedulerUnit.year, 1),
-        source: indexFund,
-      ),
-    ];
-    const duration = SchedulerDuration(SchedulerUnit.year, 30);
-    final scheduler = Scheduler(
-      actions: actions,
-      duration: duration,
+    // Plot from Investment Account
+    final plotPullFromInvestment = PullPipe<int>();
+    final plotPullFromInvestmentCapital = PullPipe<int>();
+    // Interest from Investment Account
+    final pipe3 = PullPipe<int>();
+    // Interest to Investment Account
+    final pipe4 = PushPipe<int>();
+
+    // Investment account
+    Accumulator(
+      registerPushHandlers: [
+        pipe1.registerPushHandler,
+        pipe4.registerPushHandler,
+      ],
+      registerPullHandlers: [
+        plotPullFromInvestment.registerPullHandler,
+        pipe3.registerPullHandler,
+      ],
     );
 
-    int runs = 0;
-    while (scheduler.runNext()) {
-      runs += 1;
+    // Sum of investment capital
+    Accumulator(
+      registerPushHandlers: [
+        pushToInvestmentCapitalAccumulator.registerPushHandler
+      ],
+      registerPullHandlers: [plotPullFromInvestmentCapital.registerPullHandler],
+    );
+
+    // Interest
+    Interest(
+      ctx,
+      rate: 0.1,
+      pull: pipe3.pull,
+      pushers: [pipe4.push],
+    );
+    int lastBalanceCents = 0;
+    int lastCapitalCents = 0;
+    int lastYears = 0;
+    Plotter(
+      ctx,
+      callback: (_, years, cents) {
+        lastBalanceCents = cents;
+        lastYears = years;
+      },
+      pull: plotPullFromInvestment.pull,
+      isDone: (int x) => x >= 1000000 * 100, // $1M
+      label: 'Investment balance',
+      interval: SchedulerDuration(years: 1),
+    );
+    Plotter(
+      ctx,
+      pull: plotPullFromInvestmentCapital.pull,
+      isDone: (int _) => false,
+      label: 'Investment capital',
+      interval: SchedulerDuration(years: 1),
+      callback: (_, years, cents) {
+        lastCapitalCents = cents;
+        lastYears = years;
+      }
+    );
+    while (true) {
+      if (ctx.scheduler.tick()) {
+        break;
+      }
     }
-
-    expect(runs, duration.count);
-    expect(indexFund.value.value, 10.96);
-  });
-
-  test('compound interest monthly -- 30 years', () {
-    final indexFund = Account(
-      name: 'Total market index fund',
-      value: const Dollar.fromCents(100),
-    );
-    final actions = <Action>[
-      InterestAction(
-        apy: 0.08,
-        interval: SchedulerDuration(SchedulerUnit.month, 1),
-        source: indexFund,
-      ),
-    ];
-    const duration = SchedulerDuration(SchedulerUnit.year, 30);
-    final scheduler = Scheduler(
-      actions: actions,
-      duration: duration,
-    );
-
-    int runs = 0;
-    while (scheduler.runNext()) {
-      runs += 1;
-    }
-
-    expect(runs, duration.count * 12);
-    expect(indexFund.value.value, 11.03);
-  });
-
-  test('Consistently investing -- 30 years', () {
-    final indexFund = Account(
-      name: 'Total market index fund',
-      value: const Dollar.fromCents(0),
-    );
-    final savingsAccount = Account(
-      name: 'Savings account',
-      value: const Dollar.fromCents(0),
-    );
-    final actions = <Action>[
-      InterestAction(
-        apy: 0.08,
-        interval: SchedulerDuration(SchedulerUnit.month, 1),
-        source: indexFund,
-      ),
-      IncomeAction(
-        name: 'full-time salary',
-        account: savingsAccount,
-        salary: Dollar(50000),
-        postActions: <DependentAction<Dollar, void>>[
-          TransferAction(
-            name: '10% of salary',
-            rate: 0.1,
-            source: savingsAccount,
-            target: indexFund,
-          ),
-        ],
-      ),
-    ];
-    const duration = SchedulerDuration(SchedulerUnit.year, 30);
-    final scheduler = Scheduler(
-      actions: actions,
-      duration: duration,
-    );
-
-    while (scheduler.runNext()) {}
-
-    expect(indexFund.value.value, 625545.0);
+    expect(lastYears, 45);
+    // > $1M
+    expect(lastBalanceCents, greaterThanOrEqualTo(1000000 * 100));
+    expect(lastCapitalCents, 45 * 12 * 10000);
   });
 }
