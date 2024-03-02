@@ -5,8 +5,6 @@ abstract class Pusher<T> {
   final List<void Function(T t)> pushers;
 }
 
-abstract class PushReceiver<T> {
-  PushReceiver({required this.registerPushHandlers});
-
-  final List<void Function(void Function(T))> registerPushHandlers;
+abstract interface class PushReceiver<T> {
+  List<void Function(void Function(T))> get registerPushHandlers;
 }

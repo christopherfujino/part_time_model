@@ -37,21 +37,23 @@ final class Accumulator<T> extends PullReceiver<T> implements PushReceiver<T> {
     required super.registerPullHandlers,
     required this.reducer,
     required T initialValue,
-  }) : pullValue = initialValue {
+  }) : value = initialValue {
     for (final handler in registerPushHandlers) {
       handler((T cur) {
-        pullValue = reducer(pullValue, cur);
+        value = reducer(value, cur);
       });
     }
   }
-
-  final T Function(T acc, T cur) reducer;
 
   @override
   final List<void Function(void Function(T))> registerPushHandlers;
 
   @override
-  T pullValue;
+  T get pullValue => value;
+
+  final T Function(T acc, T cur) reducer;
+
+  T value;
 }
 
 typedef PlotterCallback = void Function(
@@ -60,6 +62,7 @@ typedef PlotterCallback = void Function(
   int cents,
 );
 
+// TODO does this need to pull, or can it be a PushReceiver?
 final class Plotter extends Schedulable implements Puller<int> {
   Plotter(
     super.ctx, {

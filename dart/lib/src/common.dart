@@ -1,5 +1,5 @@
 final class Scheduler extends Component {
-  Scheduler(super.ctx);
+  Scheduler._(super.ctx);
 
   int months = 0;
 
@@ -59,7 +59,7 @@ abstract base class Component {
 final class Context {
   Context();
 
-  late final Scheduler scheduler = Scheduler(this);
+  late final Scheduler scheduler = Scheduler._(this);
   final tickables = <Schedulable>[];
 }
 
