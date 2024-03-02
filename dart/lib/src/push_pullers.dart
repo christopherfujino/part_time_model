@@ -31,31 +31,27 @@ final class Invest<T> extends Schedulable<T> implements Pusher<T> {
   final SchedulerDuration interval;
 }
 
-final class Accumulator implements PushReceiver<int>, PullReceiver<int> {
+// TODO use generic param
+final class Accumulator extends PullReceiver<int> implements PushReceiver<int> {
   Accumulator({
     required this.registerPushHandlers,
-    required this.registerPullHandlers,
+    required super.registerPullHandlers,
     required this.reducer,
   }) {
     for (final handler in registerPushHandlers) {
       handler((int cur) {
-        _x = reducer(_x, cur);
+        pullValue = reducer(pullValue, cur);
       });
-    }
-    for (final handler in registerPullHandlers) {
-      handler(() => _x);
     }
   }
 
   final int Function(int acc, int cur) reducer;
 
   @override
-  final List<void Function(int Function())> registerPullHandlers;
-
-  @override
   final List<void Function(void Function(int))> registerPushHandlers;
 
-  int _x = 0;
+  @override
+  int pullValue = 0;
 }
 
 typedef PlotterCallback = void Function(

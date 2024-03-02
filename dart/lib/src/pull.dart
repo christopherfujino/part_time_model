@@ -5,8 +5,14 @@ interface class Puller<T> {
   final T Function() pull;
 }
 
-interface class PullReceiver<T> {
-  PullReceiver({required this.registerPullHandlers});
+abstract base class PullReceiver<T> {
+  PullReceiver({required this.registerPullHandlers}) {
+    for (final handler in registerPullHandlers) {
+      handler(() => pullValue);
+    }
+  }
 
   final List<void Function(T Function())> registerPullHandlers;
+
+  T get pullValue;
 }
