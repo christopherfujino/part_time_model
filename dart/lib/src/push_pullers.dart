@@ -11,88 +11,78 @@ final class Invest<T> extends Schedulable<T> implements Pusher<T> {
     super.ctx, {
     required this.interval,
     required this.amount,
-    required this.pushers,
+    required this.pushHandlers,
   });
 
   final T amount;
 
   @override
-  final List<void Function(T t)> pushers;
+  final List<PushHandler<T>> pushHandlers;
 
   @override
   bool tick() {
-    for (final pusher in pushers) {
-      pusher(amount);
-    }
-    return false;
+    return pushHandlers
+        .map((handler) => handler(amount))
+        .any((isDone) => isDone);
   }
 
   @override
   final SchedulerDuration interval;
 }
 
-final class Accumulator<T> extends PullReceiver<T> implements PushReceiver<T> {
+final class Accumulator<T> extends PullReceiver<T>
+    implements PushReceiver<T>, Pusher<T> {
   Accumulator({
-    required this.registerPushHandlers,
-    required super.registerPullHandlers,
+    required this.pushHandlerRegistrars,
+    required this.pushHandlers,
     required this.reducer,
     required T initialValue,
-  }) : value = initialValue {
-    for (final handler in registerPushHandlers) {
-      handler((T cur) {
-        value = reducer(value, cur);
+    required this.isDone,
+    required super.registerPullHandlers,
+  }) : pullValue = initialValue {
+    for (final register in pushHandlerRegistrars) {
+      register((T cur) {
+        pullValue = reducer(pullValue, cur);
+        bool done1 = isDone(pullValue);
+        // run pushHandlers whether or not we're done
+        bool done2 = pushHandlers
+            .map((handler) => handler(pullValue))
+            .any((isDone) => isDone);
+        return done1 || done2;
       });
     }
   }
 
   @override
-  final List<void Function(void Function(T))> registerPushHandlers;
+  final List<void Function(PushHandler<T>)> pushHandlerRegistrars;
 
   @override
-  T get pullValue => value;
+  final List<PushHandler<T>> pushHandlers;
 
   final T Function(T acc, T cur) reducer;
 
-  T value;
+  @override
+  T pullValue;
+
+  final bool Function(T) isDone;
 }
 
-typedef PlotterCallback = void Function(
-  int months,
-  int years,
-  int cents,
-);
-
 // TODO does this need to pull, or can it be a PushReceiver?
-final class Plotter extends Schedulable implements Puller<int> {
-  Plotter(
-    super.ctx, {
-    required this.pull,
-    required this.isDone,
+final class Plotter implements PushReceiver<int> {
+  Plotter({
+    required this.pushHandlerRegistrars,
     required this.label,
-    required this.interval,
     required this.callback,
-  });
-
-  final PlotterCallback callback;
-
-  @override
-  final int Function() pull;
-
-  @override
-  bool tick() {
-    final int t = pull();
-    final years = ctx.scheduler.months ~/ 12;
-    final months = ctx.scheduler.months % 12;
-    callback(months, years, t);
-    return isDone(t);
+  }) {
+    for (final register in pushHandlerRegistrars) {
+      register(callback);
+    }
   }
 
-  @override
-  final SchedulerDuration interval;
+  final PushHandler<int> callback;
 
-  // TODO make this a conditional DSL
-  // We can't interpret user-provided Dart at runtime
-  final bool Function(int) isDone;
+  @override
+  final List<void Function(PushHandler<int>)> pushHandlerRegistrars;
 
   final String label;
 }
@@ -102,7 +92,7 @@ final class Interest extends Schedulable implements Puller<int>, Pusher<int> {
     super.ctx, {
     required this.rate,
     required this.pull,
-    required this.pushers,
+    required this.pushHandlers,
   });
 
   /// APY.
@@ -112,7 +102,7 @@ final class Interest extends Schedulable implements Puller<int>, Pusher<int> {
   final int Function() pull;
 
   @override
-  final List<void Function(int t)> pushers;
+  final List<PushHandler<int>> pushHandlers;
 
   @override
   final SchedulerDuration interval = SchedulerDuration(months: 1);
@@ -122,9 +112,9 @@ final class Interest extends Schedulable implements Puller<int>, Pusher<int> {
     final total = pull();
     final currentRate = rate * interval.months / 12;
     final interest = (total.toDouble() * currentRate).floor();
-    for (final pusher in pushers) {
-      pusher(interest);
-    }
-    return false;
+
+    return pushHandlers
+        .map((handler) => handler(interest))
+        .any((isDone) => isDone);
   }
 }

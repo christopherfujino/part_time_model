@@ -9,42 +9,43 @@ void main() {
     Invest(
       ctx,
       interval: SchedulerDuration(months: 1),
-      pushers: [
+      pushHandlers: [
         pipe1.push,
         pushToInvestmentCapitalAccumulator.push,
       ],
       amount: 100 * 100, // $100
     );
     // Plot from Investment Account
-    final plotPullFromInvestment = PullPipe<int>();
-    final plotPullFromInvestmentCapital = PullPipe<int>();
+    final pushFromInvestmentToPlotter = PushPipe<int>();
+    final pushFromCapitalToPlotter = PushPipe<int>();
     // Interest from Investment Account
     final pipe3 = PullPipe<int>();
     // Interest to Investment Account
     final pipe4 = PushPipe<int>();
 
     // Investment account
-    Accumulator(
-      registerPushHandlers: [
-        pipe1.registerPushHandler,
-        pipe4.registerPushHandler,
+    Accumulator<int>(
+      pushHandlerRegistrars: [
+        pipe1.registerHandler,
+        pipe4.registerHandler,
       ],
-      registerPullHandlers: [
-        plotPullFromInvestment.registerPullHandler,
-        pipe3.registerPullHandler,
-      ],
+      pushHandlers: [pushFromInvestmentToPlotter.push],
+      registerPullHandlers: [pipe3.registerHandler],
       reducer: (acc, cur) => acc + cur,
+      isDone: (int value) => value >= (1000000 * 100), // $1M
       initialValue: 0,
     );
 
     // Sum of investment capital
-    Accumulator(
-      registerPushHandlers: [
-        pushToInvestmentCapitalAccumulator.registerPushHandler
+    Accumulator<int>(
+      pushHandlerRegistrars: [
+        pushToInvestmentCapitalAccumulator.registerHandler
       ],
-      registerPullHandlers: [plotPullFromInvestmentCapital.registerPullHandler],
+      pushHandlers: [pushFromCapitalToPlotter.push],
+      registerPullHandlers: [],
       reducer: (acc, cur) => acc + cur,
       initialValue: 0,
+      isDone: (_) => false,
     );
 
     // Interest
@@ -52,41 +53,34 @@ void main() {
       ctx,
       rate: 0.1,
       pull: pipe3.pull,
-      pushers: [pipe4.push],
+      pushHandlers: [pipe4.push],
     );
     int lastBalanceCents = 0;
     int lastCapitalCents = 0;
-    int lastYears = 0;
     Plotter(
-      ctx,
-      callback: (_, years, cents) {
-        lastBalanceCents = cents;
-        lastYears = years;
-      },
-      pull: plotPullFromInvestment.pull,
-      isDone: (int x) => x >= 1000000 * 100, // $1M
       label: 'Investment balance',
-      interval: SchedulerDuration(years: 1),
+      callback: (cents) {
+        lastBalanceCents = cents;
+        return false;
+      },
+      pushHandlerRegistrars: [pushFromInvestmentToPlotter.registerHandler],
     );
     Plotter(
-      ctx,
-      pull: plotPullFromInvestmentCapital.pull,
-      isDone: (int _) => false,
       label: 'Investment capital',
-      interval: SchedulerDuration(years: 1),
-      callback: (_, years, cents) {
+      callback: (cents) {
         lastCapitalCents = cents;
-        lastYears = years;
-      }
+        return false;
+      },
+      pushHandlerRegistrars: [pushFromCapitalToPlotter.registerHandler],
     );
     while (true) {
       if (ctx.scheduler.tick()) {
         break;
       }
     }
-    expect(lastYears, 45);
+    expect(ctx.scheduler.months, 44.5 * 12);
     // > $1M
     expect(lastBalanceCents, greaterThanOrEqualTo(1000000 * 100));
-    expect(lastCapitalCents, 45 * 12 * 10000);
+    expect(lastCapitalCents, 44.5 * 12 * 10000);
   });
 }

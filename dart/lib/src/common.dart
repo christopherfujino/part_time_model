@@ -1,3 +1,9 @@
+import 'pull.dart' show PullHandler;
+import 'push.dart' show PushHandler;
+
+const int maxMonths = 1000 * 12;
+//const int maxMonths = 12;
+
 final class Scheduler extends Component {
   Scheduler._(super.ctx);
 
@@ -5,11 +11,14 @@ final class Scheduler extends Component {
 
   bool tick() {
     months += 1;
+    if (months >= maxMonths) {
+      throw Exception('Reached $maxMonths months!');
+    }
     bool isDone = false;
     //print('tickables = ${ctx.tickables}');
     // TODO do we need to be able to ensure the order of these?
     // TODO can we order by dependencies?
-    for (final tickable in ctx.tickables) {
+    for (final tickable in ctx.schedulables) {
       if (months % tickable.interval.months == 0) {
         if (tickable.tick()) {
           // run all on this tick
@@ -38,7 +47,7 @@ class SchedulerDuration {
 /// Registered to the context, from where the [Scheduler] will call [tick].
 abstract base class Schedulable<T> extends Component {
   Schedulable(super.ctx) {
-    ctx.tickables.add(this);
+    ctx.schedulables.add(this);
   }
 
   /// Returns whether or not the simulation should end.
@@ -60,25 +69,19 @@ final class Context {
   Context();
 
   late final Scheduler scheduler = Scheduler._(this);
-  final tickables = <Schedulable>[];
-}
-
-class PullPipe<T> {
-  late final T Function() _handler;
-
-  void registerPullHandler(T Function() handler) {
-    _handler = handler;
-  }
-
-  T pull() => _handler();
+  final schedulables = <Schedulable>[];
 }
 
 class PushPipe<T> {
-  late final void Function(T) _receiver;
+  bool push(T t) => _handler(t);
+  late final PushHandler<T> _handler;
 
-  void registerPushHandler(void Function(T) receiver) {
-    _receiver = receiver;
-  }
+  void registerHandler(PushHandler<T> handler) => _handler = handler;
+}
 
-  void push(T t) => _receiver(t);
+class PullPipe<T> {
+  T pull() => _handler();
+  late final PullHandler<T> _handler;
+
+  void registerHandler(PullHandler<T> handler) => _handler = handler;
 }

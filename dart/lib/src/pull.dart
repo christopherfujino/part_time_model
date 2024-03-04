@@ -5,6 +5,8 @@ abstract interface class Puller<T> {
   final T Function() pull;
 }
 
+typedef PullHandler<T> = T Function();
+
 abstract base class PullReceiver<T> {
   PullReceiver({required this.registerPullHandlers}) {
     for (final handler in registerPullHandlers) {
@@ -12,7 +14,7 @@ abstract base class PullReceiver<T> {
     }
   }
 
-  final List<void Function(T Function())> registerPullHandlers;
+  final List<void Function(PullHandler<T>)> registerPullHandlers;
 
   T get pullValue;
 }
