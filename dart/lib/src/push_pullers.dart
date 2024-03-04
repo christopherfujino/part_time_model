@@ -3,8 +3,7 @@
 library;
 
 import 'common.dart';
-import 'pull.dart';
-import 'push.dart';
+import 'interface.dart';
 
 final class Invest<T> extends Schedulable<T> implements Pusher<T> {
   Invest(

@@ -1,8 +1,4 @@
-import 'pull.dart' show PullHandler;
-import 'push.dart' show PushHandler;
-
 const int maxMonths = 1000 * 12;
-//const int maxMonths = 12;
 
 final class Scheduler extends Component {
   Scheduler._(super.ctx);
@@ -53,11 +49,9 @@ abstract base class Schedulable<T> extends Component {
   /// Returns whether or not the simulation should end.
   bool tick();
 
-  // TODO should this instead be a bool callback?
   SchedulerDuration get interval;
 }
 
-// TODO should all components have an optional isDone?
 abstract base class Component {
   Component(this.ctx);
 
@@ -70,18 +64,4 @@ final class Context {
 
   late final Scheduler scheduler = Scheduler._(this);
   final schedulables = <Schedulable>[];
-}
-
-class PushPipe<T> {
-  bool push(T t) => _handler(t);
-  late final PushHandler<T> _handler;
-
-  void registerHandler(PushHandler<T> handler) => _handler = handler;
-}
-
-class PullPipe<T> {
-  T pull() => _handler();
-  late final PullHandler<T> _handler;
-
-  void registerHandler(PullHandler<T> handler) => _handler = handler;
 }
