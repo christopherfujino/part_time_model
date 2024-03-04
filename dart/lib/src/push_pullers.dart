@@ -37,8 +37,9 @@ final class Accumulator<T> extends PullReceiver<T>
     required this.reducer,
     required T initialValue,
     required this.isDone,
-    required super.registerPullHandlers,
+    required super.pullHandlerRegistrars,
   }) : pullValue = initialValue {
+    // TODO this must happen lazily, or in an explicit "initialize" step
     for (final register in pushHandlerRegistrars) {
       register((T cur) {
         pullValue = reducer(pullValue, cur);
@@ -90,7 +91,6 @@ final class Interest extends Schedulable implements Puller<int>, Pusher<int> {
   Interest(
     super.ctx, {
     required this.rate,
-    required this.pull,
     required this.pushHandlers,
   });
 
@@ -98,7 +98,7 @@ final class Interest extends Schedulable implements Puller<int>, Pusher<int> {
   final double rate;
 
   @override
-  final int Function() pull;
+  late final int Function() pull;
 
   @override
   final List<PushHandler<int>> pushHandlers;

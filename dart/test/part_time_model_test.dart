@@ -4,75 +4,64 @@ import 'package:test/test.dart';
 void main() {
   test(r'time to $1M from investing $100/month', () {
     final ctx = Context();
-    final pipe1 = PushPipe<int>();
-    final pushToInvestmentCapitalAccumulator = PushPipe<int>();
-    Invest(
+    final invest = Invest<int>(
       ctx,
       interval: SchedulerDuration(months: 1),
-      pushHandlers: [
-        pipe1.push,
-        pushToInvestmentCapitalAccumulator.push,
-      ],
+      pushHandlers: [],
       amount: 100 * 100, // $100
     );
-    // Plot from Investment Account
-    final pushFromInvestmentToPlotter = PushPipe<int>();
-    final pushFromCapitalToPlotter = PushPipe<int>();
-    // Interest from Investment Account
-    final pipe3 = PullPipe<int>();
-    // Interest to Investment Account
-    final pipe4 = PushPipe<int>();
 
     // Investment account
-    Accumulator<int>(
-      pushHandlerRegistrars: [
-        pipe1.registerHandler,
-        pipe4.registerHandler,
-      ],
-      pushHandlers: [pushFromInvestmentToPlotter.push],
-      registerPullHandlers: [pipe3.registerHandler],
+    final investmentAccumulator = Accumulator<int>(
+      pushHandlerRegistrars: [],
+      pushHandlers: [],
+      pullHandlerRegistrars: [],
       reducer: (acc, cur) => acc + cur,
       isDone: (int value) => value >= (1000000 * 100), // $1M
       initialValue: 0,
     );
 
     // Sum of investment capital
-    Accumulator<int>(
-      pushHandlerRegistrars: [
-        pushToInvestmentCapitalAccumulator.registerHandler
-      ],
-      pushHandlers: [pushFromCapitalToPlotter.push],
-      registerPullHandlers: [],
+    final investmentCapitalAccumulator = Accumulator<int>(
+      pushHandlerRegistrars: [],
+      pushHandlers: [],
+      pullHandlerRegistrars: [],
       reducer: (acc, cur) => acc + cur,
       initialValue: 0,
       isDone: (_) => false,
     );
 
     // Interest
-    Interest(
+    final interest = Interest(
       ctx,
       rate: 0.1,
-      pull: pipe3.pull,
-      pushHandlers: [pipe4.push],
+      pushHandlers: [],
     );
     int lastBalanceCents = 0;
     int lastCapitalCents = 0;
-    Plotter(
+    final investmentPlotter = Plotter(
       label: 'Investment balance',
       callback: (cents) {
         lastBalanceCents = cents;
         return false;
       },
-      pushHandlerRegistrars: [pushFromInvestmentToPlotter.registerHandler],
+      pushHandlerRegistrars: [],
     );
-    Plotter(
+    final capitalPlotter = Plotter(
       label: 'Investment capital',
       callback: (cents) {
         lastCapitalCents = cents;
         return false;
       },
-      pushHandlerRegistrars: [pushFromCapitalToPlotter.registerHandler],
+      pushHandlerRegistrars: [],
     );
+
+    connectPush<int>(PushPipe('a'), invest, investmentAccumulator);
+    connectPush<int>(PushPipe('b'), invest, investmentCapitalAccumulator);
+    connectPush<int>(PushPipe('c'), investmentAccumulator, investmentPlotter);
+    connectPush<int>(PushPipe('d'), investmentCapitalAccumulator, capitalPlotter);
+    connectPull<int>(PullPipe(), interest, investmentCapitalAccumulator);
+
     while (true) {
       if (ctx.scheduler.tick()) {
         break;
